@@ -1,0 +1,704 @@
+// --------------------------------------------------
+//Name: Muhammad Danish Zahin Bin Rafizal
+//Email: mjr7066@psu.edu
+//Class: CMPSC 472, Fall 2025
+//---------------------------------------------------
+
+// ---------------- Global Variables ----------------
+int DELAY;                 // delay variable
+int dwarf_count = 0;       // count how many dwarfs are home
+int last_dwarf_id = 0;     // which dwarf is last to arrive
+int first_home_dwarf = 0;  // which dwarf comes home first
+int dwarfs_arrived = 0;    // count dwarfs who arrived home
+int lunch_queue[3];        // queue of which dwarf needs lunch (values: 1, 2, or 3)
+int queue_head = 0;        // read position in queue
+int queue_tail = 0;        // write position in queue
+int current_dwarf = 0;     // temp variable for current dwarf being served
+
+// ---------------- Semaphores ----------------
+semaphore print_mux = 1;       // for atomic printing
+semaphore count_mux = 1;       // for atomic counting
+
+semaphore queen_order = 0;
+semaphore huntsman_taken = 0;
+semaphore sw_followed = 0;
+semaphore huntsman_told = 0;
+semaphore huntsman_gave = 0;
+semaphore queen_disguised = 0;
+semaphore sw_opened = 0;
+semaphore oldp_offered = 0;
+semaphore sw_coma = 0;
+
+semaphore let_stay1=0, let_stay2=0, let_stay3=0;
+semaphore wash_done1=0, wash_done2=0, wash_done3=0;
+semaphore lunch_ready1=0, lunch_ready2=0, lunch_ready3=0;
+semaphore d1_can_let_stay=0, d2_can_let_stay=0, d3_can_let_stay=0;
+semaphore prepare_lunch_queue=0; // queue for lunch preparation order
+
+semaphore all_home=0;        // all dwarfs are home
+semaphore barrier_mux=1;     // mutex for barrier
+semaphore barrier_wait=0;    // barrier synchronization
+semaphore all_let_stay=0;    // all dwarfs have let SW stay
+semaphore all_eaten_work=0;  // all dwarfs ate and went to work
+
+semaphore sw_in_house = 0; // Snow White is in dwarves' house
+semaphore last_dwarf_wakes = 0; // signal for last dwarf to wake SW
+semaphore sw_woken = 0;      // SW has been woken
+semaphore can_wash = 0;      // dwarfs can wash after all let her stay
+semaphore dwarfs_at_work = 0; // all dwarfs have gone to work
+
+// New semaphores for coming home and finding SW dead
+semaphore can_come_home = 0;   // dwarfs can try to come home
+semaphore home_mux = 1;        // mutex for first-home check
+semaphore arrival_mux = 1;     // mutex for counting arrivals
+semaphore lunch_queue_mux = 1; // mutex for lunch queue
+semaphore found_dead = 0;      // first dwarf found SW dead
+semaphore called_others = 0;   // first dwarf called others
+semaphore others_arrive = 0;   // other dwarfs arrive home
+semaphore all_arrived = 0;     // all dwarfs have arrived home
+
+// ---------------- Delay ----------------
+void Delay() {
+    int i;
+    int DelayTime;
+    DelayTime = random(DELAY);
+    for(i=0;i<DelayTime;i++);
+}
+
+// ---------------- Processes ----------------
+void Queen() {
+    Delay();
+    wait(print_mux);
+    cout << "Q orders H: kill SW" << endl;  // Queen orders Huntsman to kill Snow White
+    signal(print_mux);
+    signal(queen_order);
+
+    wait(huntsman_gave);
+    Delay();
+    wait(print_mux);
+    cout << "Q realizes trick" << endl;  // Queen realizes Huntsman tricked her with stag's heart
+    signal(print_mux);
+    Delay();
+    wait(print_mux);
+    cout << "Q disguises as OP" << endl;  // Queen disguises herself as Old Peddler
+    signal(print_mux);
+    signal(queen_disguised);
+}
+
+void Huntsman() {
+    wait(queen_order);
+    Delay();
+    wait(print_mux);
+    cout << "H takes SW to forest" << endl;  // Huntsman takes Snow White to forest
+    signal(print_mux);
+    signal(huntsman_taken);
+
+    wait(sw_followed);
+    Delay();
+    wait(print_mux);
+    cout << "H lets SW run" << endl;  // Huntsman tells Queen's plan and lets Snow White escape
+    signal(print_mux);
+    signal(huntsman_told);
+
+    Delay();
+    wait(print_mux);
+    cout << "H gives heart to Q" << endl;  // Huntsman gives fake (stag) heart to Queen
+    signal(print_mux);
+    signal(huntsman_gave);
+}
+
+void SnowWhite() {
+    wait(huntsman_taken);
+    Delay();
+    wait(print_mux);
+    cout << "SW follows H" << endl;  // Snow White follows Huntsman to forest
+    signal(print_mux);
+    signal(sw_followed);
+
+    wait(huntsman_told);
+    Delay();
+    wait(print_mux);
+    cout << "SW escapes, finds house, sleeps" << endl;  // Snow White escapes and finds dwarfs' house and sleep
+    signal(print_mux);
+
+    // Signal that SW is in the house so dwarfs can find her
+    signal(sw_in_house);
+    signal(sw_in_house);
+    signal(sw_in_house);
+
+    // wait until woken by last dwarf
+    wait(sw_woken);
+    Delay();
+    wait(print_mux);
+    cout << "SW explains to Ds" << endl;  // Snow White explains her story to dwarfs
+    signal(print_mux);
+
+    // Signal dwarfs in order: D1, then D2, then D3
+    signal(d1_can_let_stay);
+    wait(let_stay1);
+    
+    signal(d2_can_let_stay);
+    wait(let_stay2);
+    
+    signal(d3_can_let_stay);
+    wait(let_stay3);
+    
+    // Now all dwarfs have let her stay, signal them to wash
+    signal(can_wash);
+    signal(can_wash);
+    signal(can_wash);
+
+    // Prepare lunch in order - wait for dwarfs to wash and signal
+    wait(prepare_lunch_queue);
+    wait(lunch_queue_mux);
+    current_dwarf = lunch_queue[queue_head];
+    queue_head = queue_head + 1;
+    signal(lunch_queue_mux);
+    Delay(); 
+    wait(print_mux);
+    if (current_dwarf == 1) cout << "SW prepares lunch D1" << endl;  // SW prepares lunch for D1
+    if (current_dwarf == 2) cout << "SW prepares lunch D2" << endl;  // SW prepares lunch for D2
+    if (current_dwarf == 3) cout << "SW prepares lunch D3" << endl;  // SW prepares lunch for D3
+    signal(print_mux);
+    if (current_dwarf == 1) signal(lunch_ready1);
+    if (current_dwarf == 2) signal(lunch_ready2);
+    if (current_dwarf == 3) signal(lunch_ready3);
+    
+    wait(prepare_lunch_queue);
+    wait(lunch_queue_mux);
+    current_dwarf = lunch_queue[queue_head];
+    queue_head = queue_head + 1;
+    signal(lunch_queue_mux);
+    Delay(); 
+    wait(print_mux);
+    if (current_dwarf == 1) cout << "SW prepares lunch D1" << endl;  // SW prepares lunch for D1
+    if (current_dwarf == 2) cout << "SW prepares lunch D2" << endl;  // SW prepares lunch for D2
+    if (current_dwarf == 3) cout << "SW prepares lunch D3" << endl;  // SW prepares lunch for D3
+    signal(print_mux);
+    if (current_dwarf == 1) signal(lunch_ready1);
+    if (current_dwarf == 2) signal(lunch_ready2);
+    if (current_dwarf == 3) signal(lunch_ready3);
+    
+    wait(prepare_lunch_queue);
+    wait(lunch_queue_mux);
+    current_dwarf = lunch_queue[queue_head];
+    queue_head = queue_head + 1;
+    signal(lunch_queue_mux);
+    Delay(); 
+    wait(print_mux);
+    if (current_dwarf == 1) cout << "SW prepares lunch D1" << endl;  // SW prepares lunch for D1
+    if (current_dwarf == 2) cout << "SW prepares lunch D2" << endl;  // SW prepares lunch for D2
+    if (current_dwarf == 3) cout << "SW prepares lunch D3" << endl;  // SW prepares lunch for D3
+    signal(print_mux);
+    if (current_dwarf == 1) signal(lunch_ready1);
+    if (current_dwarf == 2) signal(lunch_ready2);
+    if (current_dwarf == 3) signal(lunch_ready3);
+
+    // wait until all dwarfs ate and went to work
+    wait(all_eaten_work);
+    wait(all_eaten_work);
+    wait(all_eaten_work);
+    
+    // Signal that dwarfs are at work (for Old Peddler)
+    signal(dwarfs_at_work);
+
+    wait(sw_opened);
+    Delay();
+    wait(print_mux);
+    cout << "SW, hears knock, opens door" << endl;  // Snow White hears knock and opens door
+    signal(print_mux);
+    signal(oldp_offered); // Signal that door is open, OP can offer apple
+
+    wait(oldp_offered); // Wait for OP to offer apple
+    Delay();
+    wait(print_mux);
+    cout << "SW eats apple,  coma" << endl;  // Snow White eats poisoned apple and falls into coma
+    signal(print_mux);
+    
+    // Signal all dwarfs can now race to come home
+    signal(can_come_home);
+    signal(can_come_home);
+    signal(can_come_home);
+}
+
+void OldPeddler() {
+    wait(queen_disguised);
+    
+    // Wait until all dwarfs have gone to work
+    wait(dwarfs_at_work);
+    
+    Delay();
+    wait(print_mux);
+    cout << "OP knocks on dwarf house" << endl;  // Old Peddler (disguised Queen) knocks on dwarf door
+    signal(print_mux);
+    signal(sw_opened);
+    
+    wait(oldp_offered); // Wait for SW to open door
+    Delay();
+    wait(print_mux);
+    cout << "OP offers poison apple" << endl;  // Old Peddler offers poisoned apple to Snow White
+    signal(print_mux);
+    signal(oldp_offered); // Signal that apple is offered
+}
+
+void Dwarf1() {
+    Delay(); 
+    wait(print_mux);
+    cout << "D1 goes to work" << endl;
+    signal(print_mux);
+
+    wait(sw_in_house); // wait until SW is in house
+    Delay(); 
+    wait(print_mux);
+    cout << "D1 finds SW" << endl;
+    signal(print_mux);
+
+    // Barrier synchronization for all dwarfs
+    wait(barrier_mux);
+    dwarf_count = dwarf_count + 1;
+    if (dwarf_count == 3) {
+        // Last dwarf to arrive
+        last_dwarf_id = 1;
+        signal(barrier_mux);
+        // Release all waiting dwarfs
+        signal(barrier_wait);
+        signal(barrier_wait);
+        
+        // Wake SW
+        Delay();
+        wait(print_mux);
+        cout << "D1 wakes SW" << endl;
+        signal(print_mux);
+        signal(sw_woken);
+    } else {
+        // Not last, wait at barrier
+        signal(barrier_mux);
+        wait(barrier_wait);
+    }
+
+    // Wait for permission to let her stay (enforces D1, D2, D3 order)
+    wait(d1_can_let_stay);
+    Delay(); 
+    wait(print_mux);
+    cout << "D1 lets stay, SW  housemaid" << endl;
+    signal(print_mux);
+    signal(let_stay1);
+
+    // Wait until all dwarfs have let her stay before washing
+    wait(can_wash);
+    
+    Delay(); 
+    wait(print_mux);
+    cout << "D1 washes" << endl;
+    signal(print_mux);
+    
+    // Add to lunch queue and signal SW
+    wait(lunch_queue_mux);
+    lunch_queue[queue_tail] = 1;
+    queue_tail = queue_tail + 1;
+    signal(lunch_queue_mux);
+    signal(prepare_lunch_queue);
+
+    wait(lunch_ready1);
+    Delay(); 
+    wait(print_mux);
+    cout << "D1 eats, go work" << endl;
+    signal(print_mux);
+    signal(all_eaten_work);
+
+    // Wait until can come home (after SW eats apple)
+    wait(can_come_home);
+    Delay(); // Random delay to create race condition
+    
+    // Try to be first home
+    wait(home_mux);
+    if (first_home_dwarf == 0) {
+        // I'm first!
+        first_home_dwarf = 1;
+        signal(home_mux);
+        
+        wait(print_mux);
+        cout << "D1 comes home" << endl;
+        signal(print_mux);
+        Delay();
+        wait(print_mux);
+        cout << "D1 finds SW dead" << endl;
+        signal(print_mux);
+        Delay();
+        wait(print_mux);
+        cout << "D1 calls others" << endl;
+        signal(print_mux);
+        
+        // Signal other dwarfs to come home
+        signal(called_others);
+        signal(called_others);
+        
+        // Wait for other dwarfs to arrive
+        wait(others_arrive);
+        wait(others_arrive);
+        
+        // Count myself as arrived
+        wait(arrival_mux);
+        dwarfs_arrived = dwarfs_arrived + 1;
+        if (dwarfs_arrived == 3) {
+            // Last to register arrival, signal all can put in casket
+            signal(all_arrived);
+            signal(all_arrived);
+            signal(all_arrived);
+        }
+        signal(arrival_mux);
+        
+        // Wait until all have arrived before putting in casket
+        wait(all_arrived);
+        
+        // Now all are home, all can put SW in casket
+        Delay(); 
+        wait(print_mux);
+        cout << "D1 puts SW in casket" << endl;
+        signal(print_mux);
+    } else {
+        // Not first, I was called
+        signal(home_mux);
+        wait(called_others);
+        
+        Delay();
+        wait(print_mux);
+        cout << "D1 comes home" << endl;
+        signal(print_mux);
+        signal(others_arrive);
+        
+        // Count myself as arrived
+        wait(arrival_mux);
+        dwarfs_arrived = dwarfs_arrived + 1;
+        if (dwarfs_arrived == 3) {
+            // Last to register arrival, signal all can put in casket
+            signal(all_arrived);
+            signal(all_arrived);
+            signal(all_arrived);
+        }
+        signal(arrival_mux);
+        
+        // Wait until all have arrived before putting in casket
+        wait(all_arrived);
+        
+        Delay(); 
+        wait(print_mux);
+        cout << "D1 puts SW in casket" << endl;
+        signal(print_mux);
+    }
+}
+
+void Dwarf2() {
+    Delay(); 
+    wait(print_mux);
+    cout << "D2 goes to work" << endl;
+    signal(print_mux);
+
+    wait(sw_in_house);
+    Delay(); 
+    wait(print_mux);
+    cout << "D2 finds SW" << endl;
+    signal(print_mux);
+
+    // Barrier synchronization for all dwarfs
+    wait(barrier_mux);
+    dwarf_count = dwarf_count + 1;
+    if (dwarf_count == 3) {
+        // Last dwarf to arrive
+        last_dwarf_id = 2;
+        signal(barrier_mux);
+        // Release all waiting dwarfs
+        signal(barrier_wait);
+        signal(barrier_wait);
+        
+        // Wake SW
+        Delay();
+        wait(print_mux);
+        cout << "D2 wakes SW" << endl;
+        signal(print_mux);
+        signal(sw_woken);
+    } else {
+        // Not last, wait at barrier
+        signal(barrier_mux);
+        wait(barrier_wait);
+    }
+
+    // Wait for permission to let her stay (enforces D1, D2, D3 order)
+    wait(d2_can_let_stay);
+    Delay(); 
+    wait(print_mux);
+    cout << "D2 lets stay, SW housemaid" << endl;
+    signal(print_mux);
+    signal(let_stay2);
+
+    // Wait until all dwarfs have let her stay before washing
+    wait(can_wash);
+    
+    Delay(); 
+    wait(print_mux);
+    cout << "D2 washes" << endl;
+    signal(print_mux);
+    
+    // Add to lunch queue and signal SW
+    wait(lunch_queue_mux);
+    lunch_queue[queue_tail] = 2;
+    queue_tail = queue_tail + 1;
+    signal(lunch_queue_mux);
+    signal(prepare_lunch_queue);
+
+    wait(lunch_ready2);
+    Delay(); 
+    wait(print_mux);
+    cout << "D2 eats, go work" << endl;
+    signal(print_mux);
+    signal(all_eaten_work);
+
+    // Wait until can come home (after SW eats apple)
+    wait(can_come_home);
+    Delay(); // Random delay to create race condition
+    
+    // Try to be first home
+    wait(home_mux);
+    if (first_home_dwarf == 0) {
+        // I'm first!
+        first_home_dwarf = 2;
+        signal(home_mux);
+        
+        wait(print_mux);
+        cout << "D2 comes home" << endl;
+        signal(print_mux);
+        Delay();
+        wait(print_mux);
+        cout << "D2 finds SW dead" << endl;
+        signal(print_mux);
+        Delay();
+        wait(print_mux);
+        cout << "D2 calls others" << endl;
+        signal(print_mux);
+        
+        // Signal other dwarfs to come home
+        signal(called_others);
+        signal(called_others);
+        
+        // Wait for other dwarfs to arrive
+        wait(others_arrive);
+        wait(others_arrive);
+        
+        // Count myself as arrived
+        wait(arrival_mux);
+        dwarfs_arrived = dwarfs_arrived + 1;
+        if (dwarfs_arrived == 3) {
+            // Last to register arrival, signal all can put in casket
+            signal(all_arrived);
+            signal(all_arrived);
+            signal(all_arrived);
+        }
+        signal(arrival_mux);
+        
+        // Wait until all have arrived before putting in casket
+        wait(all_arrived);
+        
+        Delay(); 
+        wait(print_mux);
+        cout << "D2 puts SW in casket" << endl;
+        signal(print_mux);
+    } else {
+        // Not first, I was called
+        signal(home_mux);
+        wait(called_others);
+        
+        Delay();
+        wait(print_mux);
+        cout << "D2 comes home" << endl;
+        signal(print_mux);
+        signal(others_arrive);
+        
+        // Count myself as arrived
+        wait(arrival_mux);
+        dwarfs_arrived++;
+        if (dwarfs_arrived == 3) {
+            // Last to register arrival, signal all can put in casket
+            signal(all_arrived);
+            signal(all_arrived);
+            signal(all_arrived);
+        }
+        signal(arrival_mux);
+        
+        // Wait until all have arrived before putting in casket
+        wait(all_arrived);
+        
+        Delay(); 
+        wait(print_mux);
+        cout << "D2 puts SW in casket" << endl;
+        signal(print_mux);
+    }
+}
+
+void Dwarf3() {
+    Delay(); 
+    wait(print_mux);
+    cout << "D3 goes to work" << endl;
+    signal(print_mux);
+
+    wait(sw_in_house);
+    Delay(); 
+    wait(print_mux);
+    cout << "D3 finds SW" << endl;
+    signal(print_mux);
+
+    // Barrier synchronization for all dwarfs
+    wait(barrier_mux);
+    dwarf_count = dwarf_count + 1;
+    if (dwarf_count == 3) {
+        // Last dwarf to arrive
+        last_dwarf_id = 3;
+        signal(barrier_mux);
+        // Release all waiting dwarfs
+        signal(barrier_wait);
+        signal(barrier_wait);
+        
+        // Wake SW
+        Delay();
+        wait(print_mux);
+        cout << "D3 wakes SW" << endl;
+        signal(print_mux);
+        signal(sw_woken);
+    } else {
+        // Not last, wait at barrier
+        signal(barrier_mux);
+        wait(barrier_wait);
+    }
+
+    // Wait for permission to let her stay (enforces D1, D2, D3 order)
+    wait(d3_can_let_stay);
+    Delay(); 
+    wait(print_mux);
+    cout << "D3 lets stay, SW  housemaid" << endl;
+    signal(print_mux);
+    signal(let_stay3);
+
+    // Wait until all dwarfs have let her stay before washing
+    wait(can_wash);
+    
+    Delay(); 
+    wait(print_mux);
+    cout << "D3 washes" << endl;
+    signal(print_mux);
+    
+    // Add to lunch queue and signal SW
+    wait(lunch_queue_mux);
+    lunch_queue[queue_tail] = 3;
+    queue_tail = queue_tail + 1;
+    signal(lunch_queue_mux);
+    signal(prepare_lunch_queue);
+
+    wait(lunch_ready3);
+    Delay(); 
+    wait(print_mux);
+    cout << "D3 eats, go work" << endl;
+    signal(print_mux);
+    signal(all_eaten_work);
+
+    // Wait until can come home (after SW eats apple)
+    wait(can_come_home);
+    Delay(); // Random delay to create race condition
+    
+    // Try to be first home
+    wait(home_mux);
+    if (first_home_dwarf == 0) {
+        // I'm first!
+        first_home_dwarf = 3;
+        signal(home_mux);
+        
+        wait(print_mux);
+        cout << "D3 comes home" << endl;
+        signal(print_mux);
+        Delay();
+        wait(print_mux);
+        cout << "D3 finds SW dead" << endl;
+        signal(print_mux);
+        Delay();
+        wait(print_mux);
+        cout << "D3 calls others" << endl;
+        signal(print_mux);
+        
+        // Signal other dwarfs to come home
+        signal(called_others);
+        signal(called_others);
+        
+        // Wait for other dwarfs to arrive
+        wait(others_arrive);
+        wait(others_arrive);
+        
+        // Count myself as arrived
+        wait(arrival_mux);
+        dwarfs_arrived++;
+        if (dwarfs_arrived == 3) {
+            // Last to register arrival, signal all can put in casket
+            signal(all_arrived);
+            signal(all_arrived);
+            signal(all_arrived);
+        }
+        signal(arrival_mux);
+        
+        // Wait until all have arrived before putting in casket
+        wait(all_arrived);
+        
+        Delay(); 
+        wait(print_mux);
+        cout << "D3 puts SW in casket" << endl;
+        signal(print_mux);
+    } else {
+        // Not first, I was called
+        signal(home_mux);
+        wait(called_others);
+        
+        Delay();
+        wait(print_mux);
+        cout << "D3 comes home" << endl;
+        signal(print_mux);
+        signal(others_arrive);
+        
+        // Count myself as arrived
+        wait(arrival_mux);
+        dwarfs_arrived++;
+        if (dwarfs_arrived == 3) {
+            // Last to register arrival, signal all can put in casket
+            signal(all_arrived);
+            signal(all_arrived);
+            signal(all_arrived);
+        }
+        signal(arrival_mux);
+        
+        // Wait until all have arrived before putting in casket
+        wait(all_arrived);
+        
+        Delay(); 
+        wait(print_mux);
+        cout << "D3 puts SW in casket" << endl;
+        signal(print_mux);
+    }
+}
+
+// ---------------- Main ----------------
+void main() {
+    DELAY = 50;
+
+    wait(print_mux);
+    cout << "Once upon time, lived  lovely little princess named SW ." << endl;  // Story begins
+    signal(print_mux);
+
+    cobegin {
+        Queen();
+        Huntsman();
+        SnowWhite();
+        OldPeddler();
+        Dwarf1();
+        Dwarf2();
+        Dwarf3();
+    }
+
+    wait(print_mux);
+    cout << "To be continued." << endl;  // Story ending (to be continued with Prince)
+    signal(print_mux);
+}
